@@ -3,7 +3,7 @@
 const { useReducer: uRP, useState: uSP, useEffect: uEP, useCallback: uCP, useRef: uRfP } = React;
 
 // ─── persistence ───────────────────────────────────────────────────────────
-const STORAGE_KEY = 'stylesync:state:v1';
+const STORAGE_KEY = 'stylesync:state:v2';
 const VALID_PAGES = ['home', 'upload', 'wardrobe', 'build', 'outfits', 'style'];
 
 function loadPersisted() {
@@ -190,7 +190,7 @@ function ProductionApp() {
     return {
       page: pageFromHash() || 'home',
       wardrobe: p?.wardrobe || window.SS_SEED_WARDROBE,
-      favorites: p?.favorites || ['t3','b3','s2'],
+      favorites: p?.favorites || [],
       genre: p?.genre || 'casual',
       selectedItemId: null,
       outfits: p?.outfits || window.SS_SEED_OUTFITS || [],

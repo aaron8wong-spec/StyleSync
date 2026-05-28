@@ -250,6 +250,10 @@ function EditItemModal({ item, favorited, onFav, onRemove, onSave, onClose, comp
   const [cat, setCat] = uSC(item.cat);
   const [color, setColor] = uSC(item.color);
   const [fabric, setFabric] = uSC(item.fabric || '');
+  const [occasion, setOccasion] = uSC(item.occasion || '');
+  const [pattern, setPattern] = uSC(item.patternFamily || '');
+  const [material, setMaterial] = uSC(item.materialFamily || '');
+  const [sleeve, setSleeve] = uSC(item.sleeveFamily || '');
   const [vibe, setVibe] = uSC((item.tags || []).join(', '));
 
   function save() {
@@ -259,16 +263,74 @@ function EditItemModal({ item, favorited, onFav, onRemove, onSave, onClose, comp
       color,
       swatch: SW[color] || item.swatch,
       fabric,
+      // structured model attributes (Models B + C) — drive the recommender
+      occasion: occasion || undefined,
+      patternFamily: pattern || undefined,
+      materialFamily: material || undefined,
+      sleeveFamily: (cat === 'top' || cat === 'outerwear' || cat === 'dress') ? (sleeve || undefined) : undefined,
       tags: vibe.split(',').map(v => v.trim()).filter(Boolean),
     });
   }
 
-  const fields = [
-    ['Category', 'category', cat, ['top','bottom','shoes','outerwear','dress'], setCat],
-    ['Color',    'color',    color, Object.keys(SW || {}), setColor],
-    ['Fabric',   'fabric',   fabric, ['cotton','linen','wool','silk','denim','knit','synthetic'], setFabric],
-    ['Vibe',     'vibe',     vibe, (window.SS_GENRES || []).map(g => g.key.replace('_',' ')), setVibe],
-  ];
+  // Which attribute fields apply, by category (mirrors the model's masking).
+  const isShoes = cat === 'shoes';
+  const hasSleeve = cat === 'top' || cat === 'outerwear' || cat === 'dress';
+  const prettify = (o) => String(o).replace(/_/g, ' ');
+
+  const basics = [
+    { key: 'category', label: 'Category', value: cat,    set: setCat,    options: ['top','bottom','shoes','outerwear','dress'] },
+    { key: 'color',    label: 'Color',    value: color,  set: setColor,  options: Object.keys(SW || {}), swatch: true },
+    !isShoes && { key: 'fabric', label: 'Fabric', value: fabric, set: setFabric, options: ['cotton','linen','wool','silk','denim','knit','synthetic'] },
+  ].filter(Boolean);
+
+  const styleTags = [
+    { key: 'occasion', label: 'Occasion', value: occasion, set: setOccasion, options: ['casual','formal','sports'] },
+    !isShoes && { key: 'pattern',  label: 'Pattern',  value: pattern,  set: setPattern,  options: ['solid','striped','graphic','floral','other'] },
+    !isShoes && { key: 'material', label: 'Material', value: material, set: setMaterial, options: ['denim','knit','leather','chiffon','other'] },
+    hasSleeve  && { key: 'sleeve', label: 'Sleeve',   value: sleeve,   set: setSleeve,   options: ['sleeveless','short_sleeve','long_sleeve'] },
+  ].filter(Boolean);
+
+  const fieldLabel = {
+    fontFamily: FN, fontSize: 10.5, letterSpacing: 1,
+    textTransform: 'uppercase', color: C.muted,
+  };
+  const controlBase = {
+    fontFamily: FN, fontSize: 14, fontWeight: 500, color: C.ink,
+    background: C.cream, border: `1px solid ${C.line}`,
+    borderRadius: R.r1, padding: '11px 13px', outline: 'none',
+    width: '100%', boxSizing: 'border-box',
+  };
+
+  const renderSelect = (f) => (
+    <div key={f.key} style={{ display: 'grid', gap: 7, minWidth: 0 }}>
+      <span style={fieldLabel}>{f.label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        {f.swatch && (
+          <span style={{
+            flex: 'none', width: 22, height: 22, borderRadius: '50%',
+            background: SW[f.value] || item.swatch, border: `1px solid ${C.line}`,
+          }}/>
+        )}
+        <select
+          value={f.value || ''}
+          onChange={(e) => f.set(e.target.value)}
+          style={{ ...controlBase, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none',
+                   backgroundImage: `linear-gradient(45deg, transparent 50%, ${C.muted} 50%), linear-gradient(135deg, ${C.muted} 50%, transparent 50%)`,
+                   backgroundPosition: 'calc(100% - 16px) center, calc(100% - 11px) center',
+                   backgroundSize: '5px 5px, 5px 5px', backgroundRepeat: 'no-repeat',
+                   paddingRight: 30 }}>
+          <option value="">—</option>
+          {f.options.map(o => <option key={o} value={o}>{prettify(o)}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+
+  const sectionGrid = {
+    display: 'grid',
+    gridTemplateColumns: compact ? '1fr' : '1fr 1fr',
+    gap: '18px 16px',
+  };
 
   return (
     <div
@@ -286,83 +348,68 @@ function EditItemModal({ item, favorited, onFav, onRemove, onSave, onClose, comp
         onClick={(e) => e.stopPropagation()}
         style={{
           background: C.paper, borderRadius: R.r2,
-          padding: compact ? 20 : 28, width: '100%', maxWidth: 460,
-          maxHeight: '85vh', overflow: 'auto',
+          padding: compact ? '24px 22px' : '34px 36px', width: '100%', maxWidth: 540,
+          maxHeight: '88vh', overflow: 'auto',
           boxShadow: '0 20px 60px rgba(46, 42, 36, 0.3)',
         }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <window.Eyebrow>Edit piece</window.Eyebrow>
           <button onClick={onClose} aria-label="Close" style={{
             background: 'transparent', border: 'none', cursor: 'pointer',
-            color: C.muted, fontSize: 20, lineHeight: 1, padding: 0,
+            color: C.muted, fontSize: 22, lineHeight: 1, padding: 0,
           }}>×</button>
         </div>
 
-        {/* Preview */}
-        <div style={{ display: 'flex', gap: 14, marginBottom: 20, alignItems: 'flex-start' }}>
-          <div style={{ flex: 'none', width: 96 }}>
+        {/* Preview + name */}
+        <div style={{ display: 'flex', gap: 18, marginBottom: 30, alignItems: 'flex-start' }}>
+          <div style={{ flex: 'none', width: 104 }}>
             <window.GarmentTile item={item} size="sm"/>
           </div>
-          <div style={{ flex: 1 }}>
-            <window.Eyebrow style={{ marginBottom: 6 }}>Name</window.Eyebrow>
+          <div style={{ flex: 1, display: 'grid', gap: 7 }}>
+            <span style={fieldLabel}>Name</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              style={{
-                width: '100%', boxSizing: 'border-box',
-                fontFamily: FN, fontSize: 16, fontWeight: 500, color: C.ink,
-                background: C.cream, border: `1px solid ${C.line}`,
-                borderRadius: R.r1, padding: '8px 12px', outline: 'none',
-              }}
+              style={{ ...controlBase, fontSize: 16 }}
             />
           </div>
         </div>
 
-        {/* Fields */}
-        {fields.map(([label, key, value, options, setter]) => (
-          <div key={key} style={{
-            display: 'grid', gridTemplateColumns: '90px 1fr auto',
-            alignItems: 'center', gap: 10, padding: '11px 0',
-            borderTop: `1px solid ${C.lineSoft}`,
-          }}>
-            <span style={{ fontFamily: FN, fontSize: 11, color: C.muted }}>{label}</span>
-            {key === 'vibe' ? (
-              <input
-                value={value}
-                onChange={(e) => setter(e.target.value)}
-                placeholder={options.slice(0, 3).join(', ')}
-                style={{
-                  fontFamily: FN, fontSize: 14, fontWeight: 500, color: C.ink,
-                  background: C.cream, border: `1px solid ${C.line}`,
-                  borderRadius: R.r1, padding: '6px 10px', outline: 'none',
-                  width: '100%', boxSizing: 'border-box',
-                }}
-              />
-            ) : (
-              <select
-                value={value || ''}
-                onChange={(e) => setter(e.target.value)}
-                style={{
-                  fontFamily: FN, fontSize: 14, fontWeight: 500, color: C.ink,
-                  background: C.cream, border: `1px solid ${C.line}`,
-                  borderRadius: R.r1, padding: '6px 10px', outline: 'none',
-                  width: '100%', cursor: 'pointer',
-                }}>
-                <option value="">—</option>
-                {options.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            )}
-            <span>
-              {key === 'color' && color && (
-                <span style={{ width: 14, height: 14, borderRadius: '50%', background: SW[color] || item.swatch, border: `1px solid ${C.line}`, display: 'inline-block' }}/>
-              )}
-            </span>
+        {/* Basics */}
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ ...fieldLabel, color: C.ink, marginBottom: 16, opacity: 0.55 }}>Basics</div>
+          <div style={sectionGrid}>
+            {basics.map(renderSelect)}
           </div>
-        ))}
+        </div>
+
+        {/* Style tags (model attributes + vibe) */}
+        <div style={{
+          borderTop: `1px solid ${C.lineSoft}`, paddingTop: 24, marginBottom: 4,
+        }}>
+          <div style={{ ...fieldLabel, color: C.ink, marginBottom: 16, opacity: 0.55 }}>Style tags</div>
+          <div style={sectionGrid}>
+            {styleTags.map(renderSelect)}
+          </div>
+          <div style={{ display: 'grid', gap: 7, marginTop: 18 }}>
+            <span style={fieldLabel}>Vibe</span>
+            <input
+              value={vibe}
+              onChange={(e) => setVibe(e.target.value)}
+              placeholder={(window.SS_GENRES || []).slice(0, 3).map(g => g.label.toLowerCase()).join(', ')}
+              style={controlBase}
+            />
+            <span style={{ fontFamily: FN, fontSize: 11, color: C.muted }}>Comma-separated · how the piece feels</span>
+          </div>
+        </div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{
+          display: 'flex', gap: 10, marginTop: 30, flexWrap: 'wrap',
+          justifyContent: 'space-between', alignItems: 'center',
+          borderTop: `1px solid ${C.lineSoft}`, paddingTop: 22,
+        }}>
+          <div style={{ display: 'flex', gap: 10 }}>
             <window.SoftButton variant="primary" onClick={save}>Save changes</window.SoftButton>
             <window.SoftButton variant="cream" onClick={onFav}>{favorited ? '♥ Saved' : '♡ Save'}</window.SoftButton>
           </div>

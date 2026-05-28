@@ -228,6 +228,43 @@ function HomeScreen({ state, dispatch, compact }) {
         )}
       </div>
 
+      {/* How it works */}
+      <div>
+        <h2 style={{
+          fontFamily: FONT_SERIF, fontWeight: 400,
+          fontSize: compact ? 22 : 26, margin: '0 0 16px', color: COZY.ink,
+        }}>How it works</h2>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: compact ? '1fr' : 'repeat(4, 1fr)',
+          gap: 12,
+        }}>
+          {[
+            ['01', 'Snap', 'Drop in a pic of any piece you own.'],
+            ['02', 'Tag',  'We guess category, color, and vibe.'],
+            ['03', 'Style', 'Pick a feeling — we put together looks.'],
+            ['04', 'Remix', 'Style any single piece three ways.'],
+          ].map(([n, t, d]) => (
+            <Card key={n} style={{ padding: 20 }}>
+              <div style={{
+                fontFamily: FONT_SERIF, color: COZY.muted,
+                fontSize: 13, lineHeight: 1, marginBottom: 12,
+                letterSpacing: 1,
+              }}>{n}</div>
+              <div style={{
+                fontFamily: FONT_SANS, fontWeight: 500,
+                fontSize: 16, color: COZY.ink, marginBottom: 6,
+              }}>{t}</div>
+              <div style={{
+                fontFamily: FONT_SANS, fontSize: 13,
+                color: COZY.muted, lineHeight: 1.5,
+              }}>{d}</div>
+            </Card>
+          ))}
+        </div>
+      </div>
+
       {/* Closet snapshot */}
       <div>
         <div style={{
@@ -300,42 +337,6 @@ function HomeScreen({ state, dispatch, compact }) {
         </div>
       </Card>
 
-      {/* How it works */}
-      <div>
-        <h2 style={{
-          fontFamily: FONT_SERIF, fontWeight: 400,
-          fontSize: compact ? 22 : 26, margin: '0 0 16px', color: COZY.ink,
-        }}>How it works</h2>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: compact ? '1fr' : 'repeat(4, 1fr)',
-          gap: 12,
-        }}>
-          {[
-            ['01', 'Snap', 'Drop in a pic of any piece you own.'],
-            ['02', 'Tag',  'We guess category, color, and vibe.'],
-            ['03', 'Style', 'Pick a feeling — we put together looks.'],
-            ['04', 'Remix', 'Style any single piece three ways.'],
-          ].map(([n, t, d]) => (
-            <Card key={n} style={{ padding: 20 }}>
-              <div style={{
-                fontFamily: FONT_SERIF, color: COZY.muted,
-                fontSize: 13, lineHeight: 1, marginBottom: 12,
-                letterSpacing: 1,
-              }}>{n}</div>
-              <div style={{
-                fontFamily: FONT_SANS, fontWeight: 500,
-                fontSize: 16, color: COZY.ink, marginBottom: 6,
-              }}>{t}</div>
-              <div style={{
-                fontFamily: FONT_SANS, fontSize: 13,
-                color: COZY.muted, lineHeight: 1.5,
-              }}>{d}</div>
-            </Card>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

@@ -87,7 +87,7 @@ function RecoPanel({ wardrobe, favorites, onApply, compact }) {
       )}
 
       {outfits.length > 0 && (
-        <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gap: compact ? 14 : 18 }}>
           {outfits.map((o, idx) => (
             <RecoCard key={idx} outfit={o} rank={idx} onApply={onApply} compact={compact} />
           ))}
@@ -109,8 +109,8 @@ function RecoCard({ outfit, rank, onApply, compact }) {
   return (
     <div style={{
       border: `1px solid ${C.line}`, borderRadius: R.r2,
-      padding: compact ? 12 : 14, background: rank === 0 ? `color-mix(in oklab, ${C.butter}, ${C.paper} 78%)` : C.paper,
-      display: 'grid', gap: 10,
+      padding: compact ? 16 : 20, background: rank === 0 ? `color-mix(in oklab, ${C.butter}, ${C.paper} 78%)` : C.paper,
+      display: 'grid', gap: compact ? 14 : 18,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -120,22 +120,26 @@ function RecoCard({ outfit, rank, onApply, compact }) {
               background: C.ink, color: C.paper, padding: '3px 8px', borderRadius: R.r3,
             }}>Top pick</span>
           )}
-          <span style={{ fontFamily: FS, fontSize: compact ? 17 : 19, color: C.ink }}>
+          <span style={{ fontFamily: FS, fontSize: compact ? 18 : 20, color: C.ink }}>
             {pct}% match
           </span>
         </div>
         <window.SoftButton variant="cream" size="sm" onClick={() => onApply(outfit)}>Wear this</window.SoftButton>
       </div>
 
-      {/* item thumbnails */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      {/* item thumbnails — responsive grid so each tile has room for its label */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${Math.min(ordered.length, 4)}, 1fr)`,
+        gap: compact ? 10 : 14,
+      }}>
         {ordered.map((it, i) => (
-          <div key={i} style={{ width: compact ? 52 : 62, flex: 'none', position: 'relative' }}>
-            <window.GarmentTile item={it._raw || it} size="sm" />
+          <div key={i} style={{ position: 'relative' }}>
+            <window.GarmentTile item={it._raw || it} size={compact ? 'sm' : 'md'} />
             {it._fallback && (
               <span title="Filled from an adjacent occasion" style={{
-                position: 'absolute', top: 3, right: 3, width: 8, height: 8,
-                borderRadius: '50%', background: C.terra, border: `1.5px solid ${C.paper}`,
+                position: 'absolute', top: 8, right: 8, width: 9, height: 9,
+                borderRadius: '50%', background: C.terra, border: `2px solid ${C.paper}`,
               }}/>
             )}
           </div>
@@ -144,26 +148,26 @@ function RecoCard({ outfit, rank, onApply, compact }) {
 
       {/* explanation */}
       {(outfit.explanation || []).length > 0 && (
-        <div style={{ display: 'grid', gap: 3 }}>
+        <div style={{ display: 'grid', gap: 5 }}>
           {outfit.explanation.map((line, i) => (
             <div key={i} style={{
-              fontFamily: FS, fontStyle: 'italic', fontSize: compact ? 13 : 14,
-              color: C.ink, lineHeight: 1.45,
+              fontFamily: FS, fontStyle: 'italic', fontSize: compact ? 14 : 15,
+              color: C.ink, lineHeight: 1.5,
             }}>{line}</div>
           ))}
         </div>
       )}
 
       {/* sub-score chips */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
         {[
           ['occasion', outfit.breakdown.occasion],
           ['color', outfit.breakdown.color],
           ['pattern', outfit.breakdown.pattern],
         ].map(([k, v]) => (
           <span key={k} style={{
-            fontFamily: FN, fontSize: 10.5, color: C.muted,
-            background: C.cream, borderRadius: R.r3, padding: '3px 9px',
+            fontFamily: FN, fontSize: 11, color: C.muted,
+            background: C.cream, borderRadius: R.r3, padding: '4px 11px',
           }}>{k} {Math.round(v * 100)}{hasFallback && k === 'occasion' ? ' ·fallback' : ''}</span>
         ))}
       </div>
