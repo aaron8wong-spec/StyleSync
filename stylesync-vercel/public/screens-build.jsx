@@ -229,6 +229,18 @@ function BuildScreen({ state, dispatch, compact, tweaks }) {
   function clearSlot(s) { setSlots(prev => ({ ...prev, [s]: null })); setSelectedSlot(s); }
   function clearAll()   { setSlots({ outerwear: null, top: null, bottom: null, shoes: null }); setSelectedSlot('top'); }
 
+  // Load a recommendation-engine suggestion into the canvas
+  function applySuggestion(outfit) {
+    const next = { outerwear: null, top: null, bottom: null, shoes: null };
+    SLOT_ORDER.forEach(s => {
+      const rec = outfit.slots[s];
+      if (rec) next[s] = state.wardrobe.find(x => x.id === rec.id) || rec._raw || null;
+    });
+    setSlots(next);
+    setSelectedSlot(SLOT_ORDER.find(s => !next[s]) || 'top');
+    setToast(`Styled a ${Math.round(outfit.score * 100)}% match — tweak and save.`);
+  }
+
   function autoPair() {
     const have = new Set(filled.flatMap(it => it.tags || []));
     const next = { ...slots };
@@ -339,6 +351,16 @@ function BuildScreen({ state, dispatch, compact, tweaks }) {
       </div>
     </div>
   );
+
+  // Recommendation panel (V1 engine)
+  const Reco = window.RecoPanel ? (
+    <window.RecoPanel
+      wardrobe={state.wardrobe}
+      favorites={state.favorites}
+      onApply={applySuggestion}
+      compact={compact}
+    />
+  ) : null;
 
   // Stats / actions bar
   const StatsBar = (
@@ -576,6 +598,7 @@ function BuildScreen({ state, dispatch, compact, tweaks }) {
       {compact ? (
         <>
           {Canvas}
+          {Reco}
           {Closet}
           {StatsBar}
           {SavedStrip}
@@ -590,6 +613,7 @@ function BuildScreen({ state, dispatch, compact, tweaks }) {
             <div style={{ display: 'grid', gap: 14 }}>
               {Canvas}
               {StatsBar}
+              {Reco}
             </div>
             {Closet}
           </div>

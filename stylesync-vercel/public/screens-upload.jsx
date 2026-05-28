@@ -31,17 +31,11 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
   const [bgRemoved, setBgRemoved] = uS(false);
   const [editing, setEditing] = uS(false);
   const [name, setName] = uS(hasAPI ? '' : incoming.label);
-  const [dragOver, setDragOver] = uS(false);
   const fileRef = React.useRef(null);
 
-  // Shared ingest path — used by file input AND drag-drop.
-  function ingestFile(f) {
+  function handleFile(e) {
+    const f = e.target.files && e.target.files[0];
     if (!f) return;
-    if (!f.type || !f.type.startsWith('image/')) {
-      setErrorMsg("That doesn't look like an image. Try a PNG or JPG.");
-      setPhase('done');
-      return;
-    }
     setUserFile(f);
     setErrorMsg(null);
     const reader = new FileReader();
@@ -52,18 +46,6 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
       start(f);
     };
     reader.readAsDataURL(f);
-  }
-
-  function handleFile(e) {
-    const f = e.target.files && e.target.files[0];
-    ingestFile(f);
-  }
-
-  function handleDrop(e) {
-    e.preventDefault();
-    setDragOver(false);
-    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    ingestFile(f);
   }
 
   // Corner-sample background removal. Works best on plain backdrops.
@@ -124,9 +106,12 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
   function fakeScan() {
     const k = t.scanSpeed || 1;
     setTimeout(() => setReveal(r => ({ ...r, category: incoming.cat })), 500/k);
-    setTimeout(() => setReveal(r => ({ ...r, color: incoming.color })), 1000/k);
-    setTimeout(() => setReveal(r => ({ ...r, vibe: incoming.tags.join(' · ') })), 1500/k);
-    setTimeout(() => setReveal(r => ({ ...r, fabric: 'cotton · pointelle knit' })), 2000/k);
+    setTimeout(() => setReveal(r => ({ ...r, occasion: incoming.occasion || 'casual' })), 850/k);
+    setTimeout(() => setReveal(r => ({ ...r, color: incoming.color })), 1100/k);
+    setTimeout(() => setReveal(r => ({ ...r, pattern: incoming.patternFamily || 'solid' })), 1400/k);
+    setTimeout(() => setReveal(r => ({ ...r, material: incoming.materialFamily || 'knit' })), 1700/k);
+    setTimeout(() => setReveal(r => ({ ...r, sleeve: incoming.sleeveFamily || '' })), 2000/k);
+    setTimeout(() => setReveal(r => ({ ...r, vibe: incoming.tags.join(' · ') })), 2250/k);
     setTimeout(() => { setReveal(r => ({ ...r, conf: 0.94 })); setPhase('done'); }, 2500/k);
   }
 
@@ -149,13 +134,17 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
       const k = t.scanSpeed || 1;
       // Reveal fields cinematically after the response lands
       setTimeout(() => setReveal(r => ({ ...r, category: prediction.category })),  300/k);
-      setTimeout(() => setReveal(r => ({ ...r, color:    prediction.color })),     700/k);
-      setTimeout(() => setReveal(r => ({ ...r, vibe:     '' })),                  1100/k);
-      setTimeout(() => setReveal(r => ({ ...r, fabric:   '' })),                  1400/k);
+      setTimeout(() => setReveal(r => ({ ...r, occasion: prediction.occasion || '' })), 600/k);
+      setTimeout(() => setReveal(r => ({ ...r, color:    prediction.color })),     900/k);
+      setTimeout(() => setReveal(r => ({ ...r, pattern:  prediction.patternFamily || '' })), 1150/k);
+      setTimeout(() => setReveal(r => ({ ...r, material: prediction.materialFamily || '' })), 1400/k);
+      setTimeout(() => setReveal(r => ({ ...r, sleeve:   prediction.sleeveFamily || '' })), 1600/k);
+      setTimeout(() => setReveal(r => ({ ...r, vibe:     '' })),                  1800/k);
       setTimeout(() => {
         setReveal(r => ({
           ...r,
           conf: prediction.confidence,
+          occasionConf: prediction.occasionConfidence,
           _swatch: prediction.swatch,
           _subcategory: prediction.subcategory,
         }));
@@ -222,6 +211,12 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
       swatch: finalSwatch,
       fabric: reveal.fabric || '',
       tags: finalVibe,
+      // structured model outputs (Models B + C) — feed the recommender
+      occasion: reveal.occasion || undefined,
+      occasionConfidence: reveal.occasionConf,
+      patternFamily: reveal.pattern || undefined,
+      materialFamily: reveal.material || undefined,
+      sleeveFamily: reveal.sleeve || undefined,
       image: imageRef,
       confidence: reveal.conf,
       createdAt: Date.now(),
@@ -266,24 +261,12 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
           <window.Eyebrow style={{ marginBottom: 14 }}>Photo</window.Eyebrow>
 
           {phase === 'idle' ? (
-            <div
-              onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
-              onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={(e) => {
-                // Only un-highlight when leaving the dropzone itself, not its children.
-                if (e.currentTarget.contains(e.relatedTarget)) return;
-                setDragOver(false);
-              }}
-              onDrop={handleDrop}
-              style={{
-                aspectRatio: '4/5', borderRadius: R.r1,
-                border: `${dragOver ? 2 : 1}px ${dragOver ? 'solid' : 'solid'} ${dragOver ? accentDark : C.line}`,
-                background: dragOver
-                  ? `color-mix(in oklab, ${accentColor}, ${C.cream} 80%)`
-                  : C.cream,
-                display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center',
-                transition: 'background .15s, border-color .15s',
-              }}>
+            <div style={{
+              aspectRatio: '4/5', borderRadius: R.r1,
+              border: `1px solid ${C.line}`,
+              background: C.cream,
+              display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center',
+            }}>
               <div>
                 <input
                   ref={fileRef}
@@ -310,7 +293,7 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
                 <div style={{
                   fontFamily: FS, fontSize: compact ? 19 : 22, color: C.ink, marginBottom: 8,
                   letterSpacing: -0.2,
-                }}>{dragOver ? 'Release to add' : 'Drop a photo here'}</div>
+                }}>Drop a photo here</div>
                 <div style={{ fontFamily: FN, fontSize: 12, color: C.muted, marginBottom: 18 }}>
                   PNG or JPG · single piece works best
                 </div>
@@ -422,11 +405,16 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
 
             {[
               ['Category', 'category', reveal.category, ['top','bottom','shoes','outerwear','dress']],
+              ['Occasion', 'occasion', reveal.occasion, ['casual','formal','sports']],
               ['Color',    'color',    reveal.color,    Object.keys(window.SS_SWATCH || {})],
-              ['Fabric',   'fabric',   reveal.fabric,   ['cotton','linen','wool','silk','denim','knit','synthetic']],
+              ['Pattern',  'pattern',  reveal.pattern,  ['solid','striped','graphic','floral','other']],
+              ['Material', 'material', reveal.material, ['denim','knit','leather','chiffon','other']],
+              ['Sleeve',   'sleeve',   reveal.sleeve,   ['sleeveless','short_sleeve','long_sleeve']],
               ['Vibe',     'vibe',     reveal.vibe,     (window.SS_GENRES || []).map(g => g.key.replace('_',' '))],
               ...(t.showConfidence && !editing ? [['Confidence', 'conf', reveal.conf ? Math.round(reveal.conf*100) + '%' : null, null]] : []),
-            ].map(([k, key, v, options], i, arr) => (
+            ].map(([k, key, v, options], i, arr) => {
+              const display = key === 'sleeve' && v ? String(v).replace(/_/g, ' ') : v;
+              return (
               <div key={k} style={{
                 display: 'grid', gridTemplateColumns: '90px 1fr auto',
                 alignItems: 'center', gap: 10, padding: '11px 0',
@@ -454,7 +442,7 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
                     fontFamily: FN,
                     fontSize: 14, fontWeight: 500,
                     color: v ? C.ink : '#C9BDA0',
-                  }}>{v || (k === 'Vibe' && phase === 'done' && hasAPI ? 'pick one →' : '—')}</span>
+                  }}>{display || (k === 'Vibe' && phase === 'done' && hasAPI ? 'pick one →' : '—')}</span>
                 )}
                 <span>
                   {k === 'Color' && v && (
@@ -467,7 +455,8 @@ function UploadScreen({ state, dispatch, compact, tweaks }) {
                   )}
                 </span>
               </div>
-            ))}
+              );
+            })}
 
             {/* Stylist's note */}
             {phase === 'done' && !errorMsg && (

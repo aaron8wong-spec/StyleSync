@@ -66,6 +66,15 @@
       return prediction;
     },
 
+    // Outfit recommendations (V1 rule engine, server-side over stored wardrobe)
+    async recommend(occasion, limit) {
+      return jsonFetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ occasion, limit: limit || 4 }),
+      });
+    },
+
     // Image upload (returns CDN URL)
     async uploadImage(file) {
       const fd = new FormData();
