@@ -247,8 +247,8 @@ StyleSync/
 │       ├── index.html
 │       ├── api-client.js           ← JS shim bridging static frontend → Next.js API routes
 │       └── screens-*.jsx
-│
-└── backend/                        ← DEAD: only __pycache__ remains, not used
+
+
 ```
 
 ---
