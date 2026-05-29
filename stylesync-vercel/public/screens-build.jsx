@@ -352,15 +352,43 @@ function BuildScreen({ state, dispatch, compact, tweaks }) {
     </div>
   );
 
-  // Recommendation panel (V1 engine)
-  const Reco = window.RecoPanel ? (
-    <window.RecoPanel
-      wardrobe={state.wardrobe}
-      favorites={state.favorites}
-      onApply={applySuggestion}
-      compact={compact}
-    />
-  ) : null;
+  // Lightweight seed: drop an engine-styled look onto the canvas to start from.
+  // The full "Styled for you" experience now lives on the Looks page.
+  function runSeed(occ) {
+    if (!window.SS_RECO) return;
+    const res = window.SS_RECO.recommend(state.wardrobe, occ, { limit: 1 });
+    if (!res.outfits || !res.outfits.length) {
+      setToast('Add a top and a bottom to your closet first.');
+      return;
+    }
+    applySuggestion(res.outfits[0]);
+  }
+  const Reco = (
+    <div style={{
+      background: C.paper, border: `1px solid ${C.line}`,
+      borderRadius: R.r2, padding: compact ? 14 : 18,
+      display: 'grid', gap: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <Eyebrow>Need a starting point?</Eyebrow>
+        <button
+          onClick={() => dispatch({ type: 'goto', page: 'outfits' })}
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: C.terraD, fontFamily: FN, fontSize: 12, fontWeight: 500, padding: 0,
+          }}>Browse styled looks →</button>
+      </div>
+      <div style={{
+        fontFamily: FS, fontStyle: 'italic', fontSize: compact ? 15 : 16,
+        color: C.muted, lineHeight: 1.3, marginTop: -2,
+      }}>Drop a styled outfit onto the canvas, then make it yours.</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {[['casual', 'Casual'], ['formal', 'Formal'], ['sports', 'Sports']].map(([k, label]) => (
+          <window.SoftButton key={k} variant="cream" size="sm" onClick={() => runSeed(k)}>✦ {label}</window.SoftButton>
+        ))}
+      </div>
+    </div>
+  );
 
   // Stats / actions bar
   const StatsBar = (

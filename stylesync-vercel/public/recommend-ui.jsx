@@ -176,3 +176,4 @@ function RecoCard({ outfit, rank, onApply, compact }) {
 }
 
 window.RecoPanel = RecoPanel;
+window.RecoCard = RecoCard;

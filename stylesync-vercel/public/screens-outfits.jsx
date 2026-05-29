@@ -9,33 +9,58 @@ function OutfitsScreen({ state, dispatch, compact, tweaks }) {
   const t = { ...(window.UPLOAD_TWEAKS || {}), ...(tweaks || {}) };
   const accent = { terra: C.terra, sage: C.sage, butter: C.butter, rose: '#D89AA0' }[t.accent] || C.terra;
 
-  const [genre, setGenre] = uSL(state.genre || 'casual');
+  // Two axes: OCCASION drives the engine's scoring; VIBE narrows the pool.
+  const OCCASIONS_O = [
+    { key: 'casual', label: 'Casual' },
+    { key: 'formal', label: 'Formal' },
+    { key: 'sports', label: 'Sports' },
+  ];
+  const VIBE_OCC = {
+    casual: 'casual', cottage: 'casual', minimal: 'casual', punk: 'casual',
+    business_casual: 'formal', athletic: 'sports',
+  };
+
+  const [vibe, setVibe] = uSL(state.genre || 'casual');
+  const [occasion, setOccasion] = uSL(VIBE_OCC[state.genre] || 'casual');
   const [seedN, setSeedN] = uSL(0);
-  const [saved, setSaved] = uSL([]);
 
-  const outfits = uML(() => {
-    const w = state.wardrobe;
-    const tagMatch = (it) => it.tags?.includes(genre);
-    function pick(cat, idx) {
-      const matches = w.filter(it => it.cat === cat && tagMatch(it));
-      const fallback = w.filter(it => it.cat === cat);
-      const pool = matches.length ? matches : fallback;
-      if (!pool.length) return null;
-      return pool[(idx + seedN) % pool.length];
-    }
-    return [0, 1, 2].map((i) => ({
-      id: `${genre}-${seedN}-${i}`,
-      mood: ['soft', 'crisp', 'easy'][i],
-      top: pick('top', i),
-      bottom: pick('bottom', i),
-      shoes: pick('shoes', i),
-      outer: pick('outerwear', i),
-    }));
-  }, [state.wardrobe, genre, seedN]);
+  // Run the real V1 engine. Vibe filters the candidate pool; if that pool can't
+  // make a top + bottom, relax to the whole closet and flag it.
+  const reco = uML(() => {
+    const w = state.wardrobe || [];
+    const byVibe = w.filter(it => (it.tags || []).includes(vibe));
+    const hasTB = byVibe.some(i => i.cat === 'top') && byVibe.some(i => i.cat === 'bottom');
+    const useVibe = !!vibe && hasTB;
+    const pool = useVibe ? byVibe : w;
+    const res = window.SS_RECO ? window.SS_RECO.recommend(pool, occasion, { limit: 9 }) : { outfits: [] };
+    return { ...res, relaxed: !!vibe && byVibe.length > 0 && !hasTB };
+  }, [state.wardrobe, vibe, occasion]);
 
-  const moodLine = { soft: 'Soft layers', crisp: 'Crisp & polished', easy: 'For a long walk' };
+  const allOutfits = reco.outfits || [];
+  // Shuffle rotates a window of three through the ranked list.
+  const windowStart = allOutfits.length ? (seedN * 3) % allOutfits.length : 0;
+  const outfits = allOutfits.length
+    ? Array.from({ length: Math.min(3, allOutfits.length) }, (_, i) => allOutfits[(windowStart + i) % allOutfits.length])
+    : [];
+  const notEnough = reco.reason === 'need_top_and_bottom';
 
-  const genreLabel = (window.SS_GENRES.find(g => g.key === genre)?.label || 'easy').toLowerCase();
+  const occLabel = (OCCASIONS_O.find(o => o.key === occasion)?.label || 'casual').toLowerCase();
+  const vibeName = (window.SS_GENRES.find(g => g.key === vibe)?.label || '').toLowerCase();
+
+  function wearReco(o) {
+    dispatch({ type: 'load_into_build', outfit: {
+      id: 'reco-' + Date.now(),
+      name: `${occLabel}${vibeName ? ' · ' + vibeName : ''}`,
+      slots: {
+        outerwear: o.slots.outerwear?.id || null,
+        top:       o.slots.top?.id       || null,
+        bottom:    o.slots.bottom?.id    || null,
+        shoes:     o.slots.shoes?.id     || null,
+      },
+      tag: vibe,
+    }});
+  }
+
   const vibeLabelMap = Object.fromEntries((window.SS_GENRES || []).map(g => [g.key, g.label.toLowerCase()]));
   const SLOT_ORDER_O = ['outerwear', 'top', 'bottom', 'shoes'];
   const myLooks = state.outfits || [];
@@ -142,136 +167,117 @@ function OutfitsScreen({ state, dispatch, compact, tweaks }) {
         </div>
       )}
 
-      {/* ── Auto-suggested ── */}
+      {/* ── Styled for you (real V1 engine) ── */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <window.Eyebrow style={{ marginBottom: 10 }}>Looks for today</window.Eyebrow>
-          <window.ScreenH1 compact={compact}>Three ways to feel {genreLabel}.</window.ScreenH1>
+          <window.Eyebrow style={{ marginBottom: 10 }}>Styled for you · rule-based</window.Eyebrow>
+          <window.ScreenH1 compact={compact}>
+            {`${occLabel.charAt(0).toUpperCase()}${occLabel.slice(1)} looks`}{vibeName ? `, ${vibeName} vibe.` : '.'}
+          </window.ScreenH1>
         </div>
-        <button
-          onClick={() => setSeedN(n => n + 1)}
-          aria-label="Reshuffle"
-          style={{
-            background: 'transparent', border: `1px solid ${C.line}`,
-            color: C.ink, borderRadius: R.r3,
-            padding: '8px 14px', cursor: 'pointer',
-            fontFamily: FN, fontSize: 13, fontWeight: 500,
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-          }}>↻ Shuffle</button>
-      </div>
-
-      {/* Genre picker */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {window.SS_GENRES.map(g => (
-          <button key={g.key}
-            onClick={() => { setGenre(g.key); setSeedN(0); dispatch({ type: 'genre', genre: g.key }); }}
+        {outfits.length > 0 && (
+          <button
+            onClick={() => setSeedN(n => n + 1)}
+            aria-label="Reshuffle"
             style={{
-              background: genre === g.key ? C.ink : C.paper,
-              color: genre === g.key ? C.paper : C.ink,
-              border: `1px solid ${genre === g.key ? C.ink : C.line}`,
-              borderRadius: R.r3, cursor: 'pointer',
-              padding: compact ? '8px 14px' : '9px 16px',
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              fontFamily: FN, fontSize: compact ? 12 : 13, fontWeight: 500,
-            }}>
-            <span style={{ fontSize: 14, opacity: 0.85 }}>{g.emoji}</span>
-            <span>{g.label}</span>
-          </button>
-        ))}
+              background: 'transparent', border: `1px solid ${C.line}`,
+              color: C.ink, borderRadius: R.r3,
+              padding: '8px 14px', cursor: 'pointer',
+              fontFamily: FN, fontSize: 13, fontWeight: 500,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>↻ Shuffle</button>
+        )}
       </div>
 
-      {/* Outfits */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: compact ? '1fr' : 'repeat(3, 1fr)',
-        gap: compact ? 14 : 18,
-      }}>
-        {outfits.map((o, idx) => {
-          const isSaved = saved.includes(o.id);
-          return (
-            <div key={o.id} style={{
-              background: C.paper, border: `1px solid ${C.line}`,
-              borderRadius: R.r2, padding: compact ? 18 : 22,
-              display: 'grid', gap: 14, position: 'relative',
-            }}>
-              <div style={{
-                fontFamily: FS, fontWeight: 400,
-                fontSize: compact ? 22 : 24, color: C.ink, lineHeight: 1.15,
-                letterSpacing: -0.2,
-              }}>{moodLine[o.mood]}</div>
+      {/* Occasion — the engine's formality axis */}
+      <div style={{ display: 'grid', gap: 8 }}>
+        <window.Eyebrow>Occasion</window.Eyebrow>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {OCCASIONS_O.map(o => (
+            <button key={o.key}
+              onClick={() => { setOccasion(o.key); setSeedN(0); }}
+              style={{
+                background: occasion === o.key ? C.ink : C.paper,
+                color: occasion === o.key ? C.paper : C.ink,
+                border: `1px solid ${occasion === o.key ? C.ink : C.line}`,
+                borderRadius: R.r3, cursor: 'pointer',
+                padding: compact ? '8px 16px' : '9px 18px',
+                fontFamily: FN, fontSize: compact ? 12 : 13, fontWeight: 500,
+              }}>{o.label}</button>
+          ))}
+        </div>
+      </div>
 
-              {/* Stack */}
-              <div style={{
-                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
+      {/* Vibe — the expressive axis; narrows the candidate pool */}
+      <div style={{ display: 'grid', gap: 8 }}>
+        <window.Eyebrow>Vibe</window.Eyebrow>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {window.SS_GENRES.map(g => (
+            <button key={g.key}
+              onClick={() => { setVibe(g.key); setSeedN(0); dispatch({ type: 'genre', genre: g.key }); }}
+              style={{
+                background: vibe === g.key ? C.ink : C.paper,
+                color: vibe === g.key ? C.paper : C.ink,
+                border: `1px solid ${vibe === g.key ? C.ink : C.line}`,
+                borderRadius: R.r3, cursor: 'pointer',
+                padding: compact ? '8px 14px' : '9px 16px',
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                fontFamily: FN, fontSize: compact ? 12 : 13, fontWeight: 500,
               }}>
-                {[
-                  ['outer', o.outer],
-                  ['top', o.top],
-                  ['bottom', o.bottom],
-                  ['shoes', o.shoes],
-                ].map(([slot, item]) => (
-                  <div key={slot}>
-                    {item ? (
-                      <window.GarmentTile item={item} size="sm"/>
-                    ) : (
-                      <div style={{
-                        aspectRatio: '3/4', borderRadius: R.r1,
-                        background: C.cream, border: `1px solid ${C.line}`,
-                        display: 'grid', placeItems: 'center',
-                        color: C.muted, fontFamily: FN, fontSize: 11,
-                      }}>no {slot}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Palette + actions row */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {[o.outer, o.top, o.bottom, o.shoes].filter(Boolean).map((it, i) => (
-                    <span key={i} title={it.color} style={{
-                      width: 12, height: 12, borderRadius: '50%',
-                      background: it.swatch, border: `1px solid ${C.line}`,
-                    }}/>
-                  ))}
-                </div>
-                <button
-                  onClick={() => dispatch({ type: 'goto', page: 'style' })}
-                  aria-label="Remix"
-                  title="Remix this look"
-                  style={{
-                    background: 'transparent', border: 'none',
-                    color: C.muted, cursor: 'pointer',
-                    fontFamily: FN, fontSize: 12, padding: 4,
-                  }}>↻ remix</button>
-              </div>
-
-              <button
-                onClick={() => {
-                  const look = {
-                    id: 'auto-' + o.id,
-                    name: moodLine[o.mood],
-                    slots: {
-                      outerwear: o.outer?.id || null,
-                      top:       o.top?.id   || null,
-                      bottom:    o.bottom?.id|| null,
-                      shoes:     o.shoes?.id || null,
-                    },
-                    tag: genre,
-                  };
-                  dispatch({ type: 'load_into_build', outfit: look });
-                }}
-                style={{
-                  padding: '11px 14px',
-                  background: C.ink,
-                  color: C.paper,
-                  border: 'none', borderRadius: R.r3, cursor: 'pointer',
-                  fontFamily: FN, fontWeight: 500, fontSize: 13,
-                }}>Wear today →</button>
-            </div>
-          );
-        })}
+              <span style={{ fontSize: 14, opacity: 0.85 }}>{g.emoji}</span>
+              <span>{g.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Relaxed-pool note */}
+      {reco.relaxed && (
+        <div style={{
+          background: C.paper, border: `1px solid ${C.line}`, borderRadius: R.r1,
+          padding: '10px 14px', fontFamily: FN, fontSize: 13, color: C.muted, lineHeight: 1.5,
+        }}>
+          Not enough <b style={{ color: C.ink }}>{vibeName}</b> pieces to build a full look yet —
+          showing {occLabel} looks from your whole closet instead.
+        </div>
+      )}
+
+      {/* Not-enough state */}
+      {notEnough && (
+        <div style={{
+          background: C.paper, border: `1px solid ${C.line}`, borderRadius: R.r1,
+          padding: 16, fontFamily: FN, fontSize: 13, color: C.muted, lineHeight: 1.5,
+        }}>
+          You'll need at least one <b style={{ color: C.ink }}>top</b> and one{' '}
+          <b style={{ color: C.ink }}>bottom</b> in your closet for {occLabel} looks.{' '}
+          <button
+            onClick={() => dispatch({ type: 'goto', page: 'upload' })}
+            style={{
+              background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+              color: C.ink, fontFamily: FN, fontSize: 13, fontWeight: 600, textDecoration: 'underline',
+            }}>Add pieces →</button>
+        </div>
+      )}
+
+      {/* Engine results — same explainable card as Build */}
+      {outfits.length > 0 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: compact ? '1fr' : 'repeat(3, 1fr)',
+          gap: compact ? 14 : 18,
+          alignItems: 'start',
+        }}>
+          {outfits.map((o, idx) => (
+            <window.RecoCard
+              key={`${occasion}-${vibe}-${windowStart + idx}`}
+              outfit={o}
+              rank={windowStart + idx}
+              onApply={wearReco}
+              compact={compact}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
