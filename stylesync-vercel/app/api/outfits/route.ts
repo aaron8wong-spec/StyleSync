@@ -1,12 +1,16 @@
-// GET  /api/outfits → { outfits: SavedOutfit[] }
-// POST /api/outfits → save a SavedOutfit  (body: SavedOutfit)
+// GET  /api/outfits → { outfits: SavedOutfit[] }  (saved looks from KV)
+// POST /api/outfits → generate recommendations
+//      body: { occasion: 'casual' | 'formal' | 'sports' }
+//      returns: { outfits: Outfit[] }
 
 import { NextResponse } from 'next/server';
-import { addOutfit, loadOutfits } from '@/lib/kv-store';
-import type { SavedOutfit } from '@/lib/types';
-import { v4 as uuid } from 'uuid';
+import { loadOutfits, loadWardrobe } from '@/lib/kv-store';
+import { generateOutfits } from '@/lib/outfitEngine';
+import type { Occasion } from '@/lib/types';
 
 export const runtime = 'nodejs';
+
+const VALID_OCCASIONS: Occasion[] = ['casual', 'formal', 'sports'];
 
 export async function GET() {
   const outfits = await loadOutfits();
@@ -15,16 +19,20 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as Partial<SavedOutfit>;
-    const outfit: SavedOutfit = {
-      id: body.id ?? 'look-' + uuid().slice(0, 8),
-      name: body.name ?? 'Untitled',
-      slots: body.slots ?? { top: null, bottom: null, shoes: null, outerwear: null, dress: null },
-      tag: body.tag ?? null,
-      createdAt: body.createdAt ?? Date.now(),
-    };
-    await addOutfit(outfit);
-    return NextResponse.json({ ok: true, outfit });
+    const body = (await req.json()) as { occasion?: string };
+    const occasion = body.occasion;
+
+    if (!occasion || !(VALID_OCCASIONS as string[]).includes(occasion)) {
+      return NextResponse.json(
+        { error: `occasion must be one of: ${VALID_OCCASIONS.join(', ')}` },
+        { status: 400 },
+      );
+    }
+
+    const wardrobe = await loadWardrobe();
+    const outfits  = generateOutfits(wardrobe, occasion);
+
+    return NextResponse.json({ outfits });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
