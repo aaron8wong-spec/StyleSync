@@ -17,6 +17,7 @@ A wardrobe planning tool that turns photos of individual clothing items into com
 - [Setup & Running Locally](#setup--running-locally)
 - [Environment Variables](#environment-variables)
 - [Deployment](#deployment)
+- [Project Codebase](#project-overview)
 - [Limitations & Known Issues](#limitations--known-issues)
 
 ---
@@ -337,6 +338,93 @@ To update:
 3. The Space restarts automatically
 
 ---
+## Project Codebase
+
+### Core Application
+
+| File | Description |
+|------|-------------|
+| `app.py` | Gradio inference app deployed to HF Spaces. Runs all three PyTorch models and color extraction on uploaded images. |
+| `requirements.txt` | Python dependencies for `app.py` and training notebooks. |
+| `recommendation/RECOMMENDATION_LOGIC_V1.md` | Full design spec for the rule-based outfit scoring engine including weights, color groups, pattern rules, and occasion penalty logic. |
+
+---
+
+### Models
+
+| File | Description |
+|------|-------------|
+| `models/resnet50_stylesync.pt` | Model A v1 weights — clothing category classifier (5 classes). Currently live on HF Space. |
+| `models/resnet50_stylesync_improved.pt` | Model A v2 weights — improved category classifier. Trained, pending deployment. |
+| `models/resnet50_stylesync_occasion_v2.pt` | Model B weights — occasion classifier (casual, formal, sports). |
+| `DeepFashion/attribute_modeling/model_b_v1/outputs/model_b_v3_material_merged_resnet50_best.pt` | Model C weights — multi-head attribute predictor (pattern, material, sleeve). |
+| `DeepFashion/attribute_modeling/model_b_v1/outputs/model_b_v3_material_merged_label_vocabs.json` | Label vocab mapping for Model C — maps integer indices to attribute class names. |
+
+---
+
+### Training Notebooks
+
+| File | Description |
+|------|-------------|
+| `notebooks/data_exploration.ipynb` | EDA on the Myntra dataset — class distributions, image quality checks, label analysis. |
+| `notebooks/image_preprocessing.ipynb` | Tests rule-based region cropping and center-zoom preprocessing on sample images. |
+| `notebooks/classifier_training_baseline.ipynb` | Baseline ResNet-50 training run for Model A. |
+| `notebooks/baseline_improved.ipynb` | Improved Model A training with class-weighted loss and two-stage fine-tuning. |
+| `notebooks/model_eval_full_dataset.ipynb` | Final Model A evaluation on the full dataset — precision, recall, F1 per class. |
+| `notebooks/occasion_classifier_training.ipynb` | Model B v1 training with class-weighted CrossEntropyLoss. |
+| `notebooks/occasion_classifier_v2.ipynb` | Model B v2 training with data capping — final version used in production. |
+| `notebooks/occasion_distribution_analysis.ipynb` | Analysis of occasion label distribution across the Myntra dataset. |
+| `DeepFashion/attribute_modeling/model_b_v1/model_b_v1_training.ipynb` | Model C v1 training — multi-head ResNet-50 on DeepFashion attribute annotations. |
+| `DeepFashion/attribute_modeling/model_b_v1/model_b_v2_training.ipynb` | Model C v2/v3 training — simplified label sets, masked supervision, two-stage fine-tuning. |
+
+---
+
+### Datasets
+
+| File | Description |
+|------|-------------|
+| `data/combined_df.csv` | Merged Myntra dataset — 23,393 rows filtered to 5 subCategories. Contains image URLs and metadata. |
+| `data/balanced_df.csv` | Class-balanced subset of `combined_df` used for early training experiments. |
+| `data/images.csv` | Raw Myntra image CSV — maps image ID to hosted URL. |
+| `data/styles.csv` | Raw Myntra metadata CSV — articleType, baseColour, subCategory, usage per item. |
+| `DeepFashion/data/anno_fine_v2_common_items_material_merged.csv` | Cleaned DeepFashion annotation CSV used to train Model C — includes pattern, material, and sleeve labels. |
+
+---
+
+### Scripts
+
+| File | Description |
+|------|-------------|
+| `scripts/crop_clothing.py` | Center-zoom preprocessing utility. Crops 10% from each edge to lightly zoom in on the clothing item. Tested but not used in the final training pipeline. |
+| `scripts/download_balanced_images.py` | Downloads the balanced image subset from Myntra URLs to local disk. |
+| `DeepFashion/attribute_modeling/build_anno_fine_outfit_features.py` | Parses raw DeepFashion annotation `.txt` files and builds the merged training CSV for Model C. |
+
+---
+
+### Frontend
+
+| File | Description |
+|------|-------------|
+| `stylesync-vercel/public/index.html` | App entry point — loads all screen components and initializes the React app. |
+| `stylesync-vercel/public/api-client.js` | JavaScript shim bridging the static frontend to the Next.js API routes. |
+| `stylesync-vercel/public/screens-upload.jsx` | Upload screen — image capture, prediction display, and wardrobe save flow. |
+| `stylesync-vercel/public/screens-upload-wardrobe.jsx` | Wardrobe grid view — displays all saved items grouped by category. |
+| `stylesync-vercel/public/screens-outfits.jsx` | Outfit generation screen — occasion selector and scored outfit display. |
+| `stylesync-vercel/public/screens-remix.jsx` | Remix screen — pick a focus item, see three scored outfit suggestions built around it using inline compatibility scoring. |
+
+---
+
+### API Routes & Library
+
+| File | Description |
+|------|-------------|
+| `stylesync-vercel/lib/outfitEngine.ts` | Rule-based outfit scoring engine — filters by occasion, scores combinations, ranks and explains results. |
+| `stylesync-vercel/lib/hf-client.ts` | Connects to the HF Space via `@gradio/client` and coerces all model outputs into typed prediction objects. |
+| `stylesync-vercel/lib/kv-store.ts` | Vercel KV CRUD layer — read and write wardrobe items and saved outfits. |
+| `stylesync-vercel/lib/types.ts` | Shared TypeScript types — `WardrobeItem`, `Outfit`, `Category`, `Occasion`, and attribute label types. |
+| `stylesync-vercel/app/api/predict/route.ts` | POST endpoint — forwards uploaded image to HF Space and returns prediction JSON. |
+| `stylesync-vercel/app/api/wardrobe/route.ts` | GET / POST endpoint — loads and saves wardrobe items via Vercel KV. |
+| `stylesync-vercel/app/api/outfits/route.ts` | POST endpoint — loads wardrobe from KV, runs `generateOutfits()`, returns ranked outfit suggestions. |
 
 ## Limitations & Known Issues
 
