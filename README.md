@@ -17,7 +17,7 @@ A wardrobe planning tool that turns photos of individual clothing items into com
 - [Setup & Running Locally](#setup--running-locally)
 - [Environment Variables](#environment-variables)
 - [Deployment](#deployment)
-- [Project Codebase](#project-overview)
+- [Project Codebase](#project-codebase)
 - [Limitations & Known Issues](#limitations--known-issues)
 
 ---
