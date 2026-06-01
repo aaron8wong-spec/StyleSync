@@ -35,11 +35,7 @@
   const colorGroup = (c) => NEUTRALS.has(c) ? 'neutral' : WARM.has(c) ? 'warm' : COOL.has(c) ? 'cool' : 'neutral';
 
   // ─── Normalise a WardrobeItem → canonical recommendation record ──────────
-  // Prefers structured model outputs; falls back to legacy tags/pattern/fabric.
-  const VIBE_TO_OCCASION = {
-    casual: 'casual', cottage: 'casual', minimal: 'casual', punk: 'casual',
-    business_casual: 'formal', athletic: 'sports',
-  };
+  // Prefers structured model outputs; falls back to pattern/fabric mapping.
   function mapPattern(p) {
     if (!p) return 'solid';
     const s = String(p).toLowerCase();
@@ -59,9 +55,6 @@
   }
   function inferOccasion(item) {
     if (item.occasion && OCCASIONS.includes(item.occasion)) return item.occasion;
-    for (const tg of (item.tags || [])) {
-      if (VIBE_TO_OCCASION[tg]) return VIBE_TO_OCCASION[tg];
-    }
     return 'casual';
   }
   function normalize(item) {
