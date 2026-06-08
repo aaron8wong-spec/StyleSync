@@ -3,7 +3,8 @@
 A wardrobe planning tool that turns photos of individual clothing items into complete outfit suggestions. Upload a photo of any clothing piece, and StyleSync classifies it, extracts its color and attributes, and adds it to your digital closet. From there, a rule-based outfit engine assembles complete looks filtered by occasion — casual, formal, or sports.
 
 **Live app:** [style-synced.vercel.app](https://style-synced.vercel.app/#/home)  
-**ML inference:** [aaron8wong/stylesync-app](https://huggingface.co/spaces/aaron8wong/stylesync-app) (Hugging Face Spaces)
+**ML inference:** [aaron8wong/stylesync-app](https://huggingface.co/spaces/aaron8wong/stylesync-app) (Hugging Face Spaces)  
+**GitHub:** [manasamaddi1/StyleSync](https://github.com/manasamaddi1/StyleSync)
 
 ---
 
@@ -16,40 +17,24 @@ A wardrobe planning tool that turns photos of individual clothing items into com
 - [Setup & Running Locally](#setup--running-locally)
 - [Environment Variables](#environment-variables)
 - [Deployment](#deployment)
+- [Project Codebase](#project-codebase)
 - [Limitations & Known Issues](#limitations--known-issues)
 
 ---
 
 ## Architecture
 
-StyleSync has three layers: a **static frontend** served by Vercel, a **Next.js API layer** that handles routing and storage, and a **Gradio inference app** hosted on Hugging Face Spaces that runs the PyTorch models.
+StyleSync has three layers: a **static frontend** served by Vercel, a **Next.js API layer** that handles routing and storage, and a **Gradio inference app** on Hugging Face Spaces that runs all three PyTorch models.
 
-```
-User uploads clothing image
-        ↓
-Static frontend (Vercel — public/)
-        ↓  POST /api/predict
-Next.js API routes (Vercel — app/api/)
-        ↓  forwards image to HF Space
-Gradio app on Hugging Face Spaces (app.py)
-        ↓
-Model A  →  clothing category (top, bottom, shoes, dress, outerwear)
-Color extractor  →  dominant color via k-means
-        ↓  returns structured JSON
-Next.js API routes
-        ↓  stores item in Vercel KV (Redis)
-Wardrobe state persisted per session
-        ↓
-Outfit engine assembles combinations from wardrobe
-```
+![StyleSync Architecture](data/assets/stylesync-flowchart.png)
 
 **Key architectural decisions:**
 
-**Gradio on Hugging Face Spaces for inference — not a self-hosted backend.** PyTorch models require more memory and compute than a standard serverless function allows. Hugging Face Spaces provides free GPU-capable hosting for Gradio apps, making it the most practical free-tier option for serving ResNet-50 models without managing infrastructure.
+**Gradio on Hugging Face Spaces for inference.** PyTorch models require more memory than Vercel serverless functions allow (ResNet-50 weights alone are ~100MB, above Vercel's 50MB limit). HF Spaces provides free persistent compute for Gradio apps with no size constraint.
 
-**Static frontend + Next.js API routes as a proxy layer.** The visible UI is a static HTML/JSX app served from `public/`. The Next.js `app/api/` layer acts purely as a backend-for-frontend — it proxies image uploads to the HF Space, and handles wardrobe and outfit CRUD via Vercel KV. This separation means the frontend can be developed and iterated independently of the inference backend.
+**Static frontend + Next.js API routes as a proxy layer.** The visible UI is a static HTML/JSX app served from `public/`. The Next.js `app/api/` layer proxies image uploads to the HF Space and handles wardrobe and outfit CRUD via Vercel KV.
 
-**Vercel KV for wardrobe persistence.** Wardrobe and outfit data is stored in Vercel KV (Redis), which is natively integrated with Vercel deployments. This gives the app persistent state across sessions without requiring a separate database.
+**Vercel KV for wardrobe persistence.** Wardrobe and outfit data is stored in Vercel KV (Redis), natively integrated with Vercel deployments, giving the app persistent state across sessions without a separate database.
 
 ---
 
@@ -86,23 +71,21 @@ A **ResNet-50** pretrained on ImageNet, fine-tuned on the [Myntra Fashion Produc
 | Outerwear | 0.542 | 0.968 | 0.695 |
 | **Weighted avg** | **0.985** | **0.979** | **0.981** |
 
-Outerwear precision (0.542) is the weakest point due to its small sample size (279 images). The model over-predicts Outerwear in ambiguous cases.
+**Why no image cropping:** Myntra images are already centered on the labeled item. Rule-based cropping was tested but found to be unnecessarily aggressive — images were already 80–90% the target item, and training on full images performed better.
 
-**Why no image cropping:** The Myntra dataset images are already centered on the labeled item, with other garments only at the periphery. Rule-based cropping (top 55% for tops, bottom 55% for bottoms) was tested but found to be unnecessarily aggressive — images were already 80–90% the target item. Training on full images performed better.
-
-**Why ResNet-50:** Strong ImageNet pretraining provides transferable visual features without requiring a large fashion-specific dataset from scratch. Fine-tuning only the final layer and `layer4` keeps compute low enough for a standard laptop.
+**Why ResNet-50:** Strong ImageNet pretraining provides transferable visual features without a large fashion-specific dataset. Fine-tuning only the final layer and `layer4` keeps compute low enough for a standard laptop.
 
 ---
 
 ### Model B — Occasion Classifier
 
-A second fine-tuned ResNet-50 trained to predict which of 3 occasions a clothing item belongs to: `casual`, `formal`, `sports`.
+A second fine-tuned ResNet-50 predicting which of 3 occasions a clothing item belongs to: `casual`, `formal`, `sports`.
 
-**Why only 3 occasions:** Early experiments with 5 classes (including Ethnic and Smart Casual) produced poor recall on underrepresented classes. Collapsing to 3 well-represented and visually distinct occasions improved macro F1 significantly and makes the recommendation logic more reliable and explainable.
+**Why only 3 occasions:** Early experiments with 5 classes (including Ethnic and Smart Casual) produced poor recall on underrepresented classes. Collapsing to 3 well-separated and visually distinct occasions improved macro F1 and makes the recommendation engine more reliable.
 
-**Class imbalance handling:** Two approaches were used:
-- Class-weighted CrossEntropyLoss (v1 training)
-- Data capping — Casual capped at 2,000 rows while keeping all Sports + Formal rows (v2 training)
+**Class imbalance handling:**
+- v1: Class-weighted CrossEntropyLoss
+- v2 (final): Data capping — Casual capped at 2,000 rows, keeping all Sports and Formal rows
 
 **Final validation results (v2):**
 
@@ -114,9 +97,9 @@ A second fine-tuned ResNet-50 trained to predict which of 3 occasions a clothing
 
 ---
 
-### Model C — Attribute Predictor (Multi-Head CNN) *(in progress)*
+### Model C — Attribute Predictor (Multi-Head CNN)
 
-A shared **ResNet-50 backbone with three prediction heads**, trained on the [DeepFashion](http://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html) Fine-Grained Attribute dataset to predict clothing attributes used by the recommendation engine.
+A shared **ResNet-50 backbone with three prediction heads**, trained on the [DeepFashion](http://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html) Fine-Grained Attribute dataset.
 
 | Head | Classes | Applies To |
 |------|---------|------------|
@@ -124,9 +107,7 @@ A shared **ResNet-50 backbone with three prediction heads**, trained on the [Dee
 | `material_family` | denim, leather, other | Tops, Bottomwear, Outerwear |
 | `sleeve_family` | sleeveless, short_sleeve, long_sleeve | Tops, Outerwear |
 
-**Why one shared model instead of three separate models:** A single backbone with multiple heads allows shared visual feature extraction, is simpler to train and maintain, and uses masked supervision — each category only trains the heads relevant to it. Bottomwear never contributes gradient signal to the `sleeve_family` head.
-
-**Masked supervision:** Each training sample carries a binary mask per head. Heads irrelevant to the garment category use `ignore_index=-100` in the loss so they contribute no gradient for inapplicable samples.
+**Why one shared backbone:** A single ResNet-50 with three heads shares visual feature extraction across all attribute tasks, requires one-third the training compute of separate models, and uses masked supervision so each category only trains the heads relevant to it. Bottomwear never contributes gradient signal to the `sleeve_family` head.
 
 **Two-stage training:**
 - Stage 1 — frozen backbone, head warmup
@@ -140,21 +121,27 @@ A shared **ResNet-50 backbone with three prediction heads**, trained on the [Dee
 | `material_family` | 0.742 | 0.662 | 0.632 |
 | `sleeve_family` | 0.927 | 0.507 | 0.919 |
 
-`material_family` is the weakest head — only 8 points above the majority baseline. It is treated as a low-weight signal in the recommendation engine.
-
-**Current status:** Model C weights exist and are trained. Integration into `app.py` is in progress.
+`material_family` is the weakest head — only 8 points above the majority baseline. It is assigned the lowest weight (5%) in the outfit scoring engine.
 
 ---
 
 ### Color Extraction
 
-Dominant color is extracted using **k-means clustering** (k=3) on the image pixels, resized to 100×100 before clustering. Near-white pixels are masked out before clustering to prevent white product backgrounds from dominating the result. The dominant cluster centroid is mapped to the closest named color using Euclidean distance in RGB space across a 13-color palette: black, white, cream, gray, brown, tan, red, orange, yellow, green, blue, pink, purple.
+Dominant color extracted using **k-means clustering** (k=3) on pixels resized to 100×100. Near-white pixels are masked to prevent white product backgrounds dominating. The dominant cluster centroid is mapped to the closest named color via Euclidean distance in RGB space across a 13-color palette: black, white, cream, gray, brown, tan, red, orange, yellow, green, blue, pink, purple.
 
 ---
 
-### Outfit Recommendation Engine *(in progress)*
+### Outfit Recommendation Engine
 
-The outfit engine (`recommendation/RECOMMENDATION_LOGIC_V1.md`) is a deterministic rule-based scoring system. It is not a learned compatibility model — there is no outfit-level training dataset with true compatibility labels, so a rule-based approach is more reliable and explainable at this stage.
+A deterministic **rule-based scoring engine** implemented in `stylesync-vercel/lib/outfitEngine.ts`. There is no outfit-level training dataset with true compatibility labels, so rule-based scoring is more reliable and explainable at this stage.
+
+**Pipeline:**
+1. Filter wardrobe by target occasion, with a closest-score fallback for sparse closets
+2. Build candidate pools (tops, bottoms, shoes, outerwear, dresses)
+3. Generate all valid outfit combinations (top+bottom, dress, with/without shoes and outerwear)
+4. Score each combination using weighted signals
+5. Apply occasion penalty layer — mismatched items are penalized; hard mismatches are rejected
+6. Rank by score, deduplicate, return top 3 with natural-language explanations
 
 **Scoring weights:**
 
@@ -167,9 +154,13 @@ The outfit engine (`recommendation/RECOMMENDATION_LOGIC_V1.md`) is a determinist
 | Sleeve / layering | 10% |
 | Material compatibility | 5% |
 
-The engine applies an **occasion penalty layer** before finalizing scores — outfits with occasion mismatches are penalized or rejected regardless of visual compatibility scores. A closest-score fallback allows items from adjacent occasions to fill empty slots, but only when the item scores at least 0.35 for the target occasion and the gap to its top occasion is at most 0.15.
+**Color rules:** Neutrals (black, white, cream, gray, brown, tan) always pair safely. One accent with neutrals scores 0.9. Mixed warm+cool accents without a neutral anchor score 0.5. Multiple unrelated accents score 0.2.
 
-Every outfit suggestion includes a short natural-language explanation (e.g. "The solid top anchors the striped bottom" or "All pieces align with the same casual occasion").
+**Pattern rules:** At least one solid or striped anchor is rewarded. One loud pattern (graphic, floral) with a solid scores 0.9. Two loud patterns together score 0.2.
+
+Every outfit suggestion returns 1–3 plain-English explanations — e.g. "The solid top anchors the graphic bottom" or "The color palette stays in the same neutral family."
+
+The Remix feature uses the same engine — selecting a focus item and fetching scored outfit suggestions via `POST /api/outfits`.
 
 ---
 
@@ -178,33 +169,33 @@ Every outfit suggestion includes a short natural-language explanation (e.g. "The
 ```
 StyleSync/
 ├── app.py                          ← Gradio inference app (deployed to HF Spaces)
+│                                     Runs Models A, B, C + color extraction
 ├── requirements.txt                ← Python dependencies for app.py
 │
 ├── models/
-│   ├── resnet50_stylesync.pt               ← Model A v1 (currently live)
+│   ├── resnet50_stylesync.pt               ← Model A v1 (live)
 │   ├── resnet50_stylesync_improved.pt      ← Model A v2 (pending deployment)
-│   └── resnet50_stylesync_occasion_v2.pt   ← Model B (occasion classifier)
+│   └── resnet50_stylesync_occasion_v2.pt   ← Model B weights
 │
 ├── DeepFashion/
 │   ├── attribute_modeling/
 │   │   └── model_b_v1/
-│   │       ├── model_b_v1_training.ipynb   ← Model C v1 training
-│   │       ├── model_b_v2_training.ipynb   ← Model C v2/v3 training
+│   │       ├── model_b_v1_training.ipynb
+│   │       ├── model_b_v2_training.ipynb
 │   │       ├── MODEL_B_V1_MODELING.md      ← Model C design spec
 │   │       └── outputs/
-│   │           ├── model_b_v3_material_merged_resnet50_best.pt  ← Model C weights (best)
-│   │           └── model_b_v3_material_merged_label_vocabs.json ← Label vocab mapping
+│   │           ├── model_b_v3_material_merged_resnet50_best.pt  ← Model C weights
+│   │           └── model_b_v3_material_merged_label_vocabs.json
 │   ├── data/
-│   │   ├── anno_fine_v2_common_items_material_merged.csv        ← Model C training CSV
-│   │   └── img/                            ← DeepFashion images (large, local only)
-│   └── occasion_scoring/                   ← Scripts and docs for occasion label derivation
+│   │   ├── anno_fine_v2_common_items_material_merged.csv
+│   │   └── img/                            ← DeepFashion images (local only)
+│   └── occasion_scoring/                   ← Scripts for occasion label derivation
 │
 ├── data/
-│   ├── combined_df.csv             ← 23,393 rows, merged styles + images, filtered to 5 subCategories
-│   ├── balanced_df.csv             ← Class-balanced subset
-│   ├── images.csv                  ← Raw Myntra image ID → URL mapping
-│   ├── styles.csv                  ← Raw Myntra metadata
-│   └── images/                     ← Downloaded Myntra images (large, local only)
+│   ├── combined_df.csv             ← 23,393 rows, 5 subCategories
+│   ├── balanced_df.csv
+│   ├── images.csv
+│   └── styles.csv
 │
 ├── notebooks/
 │   ├── data_exploration.ipynb
@@ -212,43 +203,40 @@ StyleSync/
 │   ├── classifier_training_baseline.ipynb
 │   ├── baseline_improved.ipynb
 │   ├── model_training.ipynb
-│   ├── model_eval_full_dataset.ipynb       ← Final Model A evaluation metrics
-│   ├── occasion_classifier_training.ipynb  ← Model B v1 training
-│   ├── occasion_classifier_v2.ipynb        ← Model B v2 training (data capping)
+│   ├── model_eval_full_dataset.ipynb       ← Final Model A metrics
+│   ├── occasion_classifier_training.ipynb  ← Model B v1
+│   ├── occasion_classifier_v2.ipynb        ← Model B v2 (final)
 │   └── occasion_distribution_analysis.ipynb
 │
 ├── scripts/
-│   ├── crop_clothing.py            ← Center-zoom preprocessing utility (tested, not used in final pipeline)
-│   └── download_balanced_images.py ← Downloads balanced image subset from Myntra URLs
+│   ├── crop_clothing.py            ← Center-zoom utility (tested, not used in pipeline)
+│   └── download_balanced_images.py
 │
 ├── recommendation/
 │   └── RECOMMENDATION_LOGIC_V1.md  ← Full outfit engine design spec
 │
-├── StyleSync-Frontend/             ← Static React prototype (source of truth for UI)
+├── StyleSync-Frontend/             ← Static UI source files
 │   ├── index.html
 │   ├── app.jsx
-│   ├── screens-*.jsx               ← Screen components: home, upload, wardrobe, outfits, remix
-│   └── uploads/                    ← Sample wardrobe images
+│   └── screens-*.jsx               ← home, upload, wardrobe, outfits, remix
 │
-├── stylesync-vercel/               ← Next.js app (the deployed product)
-│   ├── app/
-│   │   └── api/
-│   │       ├── predict/route.ts    ← POST → forwards image to HF Space
-│   │       ├── upload/route.ts     ← POST → Vercel Blob storage
-│   │       ├── wardrobe/route.ts   ← GET / POST → Vercel KV
-│   │       ├── wardrobe/[id]/      ← DELETE / PATCH → Vercel KV
-│   │       ├── outfits/route.ts    ← GET / POST → Vercel KV
-│   │       └── outfits/[id]/       ← DELETE → Vercel KV
-│   ├── lib/
-│   │   ├── hf-client.ts            ← Hugging Face Space API client
-│   │   ├── kv-store.ts             ← Vercel KV CRUD: wardrobe + outfit items
-│   │   └── types.ts                ← Shared TypeScript types
-│   └── public/                     ← Static frontend (copy of StyleSync-Frontend)
-│       ├── index.html
-│       ├── api-client.js           ← JS shim bridging static frontend → Next.js API routes
-│       └── screens-*.jsx
-
-
+└── stylesync-vercel/               ← Next.js app (deployed product)
+    ├── app/api/
+    │   ├── predict/route.ts        ← POST → HF Space
+    │   ├── upload/route.ts         ← POST → Vercel Blob
+    │   ├── wardrobe/route.ts       ← GET / POST → Vercel KV
+    │   ├── wardrobe/[id]/          ← DELETE / PATCH → Vercel KV
+    │   ├── outfits/route.ts        ← GET / POST → runs outfitEngine
+    │   └── outfits/[id]/           ← DELETE → Vercel KV
+    ├── lib/
+    │   ├── hf-client.ts            ← HF Space client via @gradio/client
+    │   ├── kv-store.ts             ← Vercel KV CRUD
+    │   ├── outfitEngine.ts         ← Rule-based outfit scoring engine
+    │   └── types.ts                ← Shared TypeScript types
+    └── public/                     ← Static frontend
+        ├── index.html
+        ├── api-client.js           ← JS shim → Next.js API routes
+        └── screens-*.jsx
 ```
 
 ---
@@ -257,14 +245,13 @@ StyleSync/
 
 All models use ResNet-50 pretrained on ImageNet as the backbone.
 
-| Model | File | Task | Status |
-|-------|------|------|--------|
-| Model A v1 | `models/resnet50_stylesync.pt` | Clothing category (5 classes) | ✅ Live in HF Space |
-| Model A v2 | `models/resnet50_stylesync_improved.pt` | Clothing category (5 classes) | 🔄 Trained, pending deployment |
-| Model B | `models/resnet50_stylesync_occasion_v2.pt` | Occasion (3 classes) | 🔄 Trained, pending integration |
-| Model C | `DeepFashion/.../model_b_v3_material_merged_resnet50_best.pt` | Pattern, material, sleeve (3 heads) | 🔄 Trained, pending integration |
+| Model | File | Task |
+|-------|------|------|
+| Model A | `models/resnet50_stylesync_improved.pt` | Clothing category (5 classes) | 
+| Model B | `models/resnet50_stylesync_occasion_v2.pt` | Occasion (3 classes) | 
+| Model C | `DeepFashion/.../model_b_v3_material_merged_resnet50_best.pt` | Pattern, material, sleeve | 
 
-**Model weights are not committed to GitHub** due to file size. Contact a team member for access to the `.pt` files.
+**Model weights are not committed to GitHub** due to file size. Contact a team member for the `.pt` files, or download them from the HF Space Files tab.
 
 ---
 
@@ -285,33 +272,32 @@ cd StyleSync
 ### 2. Run the Gradio inference app locally
 
 ```bash
+# python dependencies
 pip install -r requirements.txt
+
 python app.py
 ```
 
-Gradio runs at **http://localhost:7860**. You can upload a clothing image and get a JSON prediction directly from the UI, or call it programmatically via the Gradio API.
-
-The `app.py` currently requires `resnet50_stylesync.pt` to be present in the project root. Make sure the model file is downloaded before running.
+Gradio runs at **http://localhost:7860**. Requires `resnet50_stylesync.pt` and the occasion and attribute model weights to be present in the expected paths before starting.
 
 ### 3. Run the Next.js frontend locally
 
 ```bash
 cd stylesync-vercel
-cp .env.local.example .env.local    # fill in values — see Environment Variables
 npm install
 npm run dev
 ```
 
-Frontend runs at **http://localhost:3000**
+Frontend runs at **http://localhost:3000**. Requires `.env.local` to be configured — see [Environment Variables](#environment-variables).
 
 ### 4. Full local stack
 
-For the full pipeline to work locally you need both running simultaneously:
+Run both simultaneously in separate terminal tabs:
 
 - Terminal 1: `python app.py` (Gradio on port 7860)
 - Terminal 2: `cd stylesync-vercel && npm run dev` (Next.js on port 3000)
 
-Set `HF_SPACE_ID` in `.env.local` to point the Next.js API routes at your local Gradio instance instead of the deployed HF Space. Since `hf-client.ts` uses `@gradio/client` with just the Space ID, for local development you may need to run the Gradio app and call it directly at `http://localhost:7860`.
+The Vercel KV credentials in `.env.local` are required for wardrobe and outfit features to work locally. Get these from a teammate via the Vercel dashboard under **Storage → your KV database → `.env.local` tab**.
 
 ---
 
@@ -321,13 +307,13 @@ Set `HF_SPACE_ID` in `.env.local` to point the Next.js API routes at your local 
 
 | Variable | Description |
 |----------|-------------|
-| `HF_SPACE_ID` | Hugging Face Space ID for the inference app (e.g. `aaron8wong/stylesync-app`). Defaults to `aaron8wong/stylesync-app` if not set. Override this to point at a different Space or a local Gradio instance. |
+| `HF_SPACE_ID` | HF Space ID for inference (default: `aaron8wong/stylesync-app`) |
 | `KV_URL` | Vercel KV connection URL — auto-injected by Vercel when KV is provisioned |
 | `KV_REST_API_URL` | Vercel KV REST URL — auto-injected by Vercel |
 | `KV_REST_API_TOKEN` | Vercel KV token — auto-injected by Vercel |
 | `KV_REST_API_READ_ONLY_TOKEN` | Vercel KV read-only token — auto-injected by Vercel |
 
-The four `KV_*` variables are automatically set by Vercel when Vercel KV storage is enabled on the project. For local development, you can find these values in the Vercel dashboard under Storage → your KV database → `.env.local` tab.
+The four `KV_*` variables are automatically set by Vercel in production. For local development, copy them from the Vercel dashboard.
 
 ---
 
@@ -335,9 +321,8 @@ The four `KV_*` variables are automatically set by Vercel when Vercel KV storage
 
 ### Frontend — Vercel
 
-The frontend deploys automatically on every push to `main`. No manual steps required. Vercel builds the Next.js app and serves the static frontend from `public/`.
+Deploys automatically on every push to `main`. To redeploy manually:
 
-**To redeploy manually:**
 ```bash
 cd stylesync-vercel
 npx vercel --prod
@@ -345,25 +330,110 @@ npx vercel --prod
 
 ### ML Inference — Hugging Face Spaces
 
-The Gradio app (`app.py`) is deployed to [aaron8wong/stylesync-app](https://huggingface.co/spaces/aaron8wong/stylesync-app).
+The Gradio app is deployed at [aaron8wong/stylesync-app](https://huggingface.co/spaces/aaron8wong/stylesync-app).
 
-**To update the HF Space:**
+To update:
 1. Push updated `app.py` and `requirements.txt` to the HF Space repo
 2. Upload updated `.pt` model weights via the HF Space Files tab
 3. The Space restarts automatically
 
 ---
+## Project Codebase
+
+### Core Application
+
+| File | Description |
+|------|-------------|
+| `app.py` | Gradio inference app deployed to HF Spaces. Runs all three PyTorch models and color extraction on uploaded images. |
+| `requirements.txt` | Python dependencies for `app.py` and training notebooks. |
+| `recommendation/RECOMMENDATION_LOGIC_V1.md` | Full design spec for the rule-based outfit scoring engine including weights, color groups, pattern rules, and occasion penalty logic. |
+
+---
+
+### Models
+
+| File | Description |
+|------|-------------|
+| `models/resnet50_stylesync.pt` | Model A v1 weights — clothing category classifier (5 classes). Currently live on HF Space. |
+| `models/resnet50_stylesync_improved.pt` | Model A v2 weights — improved category classifier. Trained, pending deployment. |
+| `models/resnet50_stylesync_occasion_v2.pt` | Model B weights — occasion classifier (casual, formal, sports). |
+| `DeepFashion/attribute_modeling/model_b_v1/outputs/model_b_v3_material_merged_resnet50_best.pt` | Model C weights — multi-head attribute predictor (pattern, material, sleeve). |
+| `DeepFashion/attribute_modeling/model_b_v1/outputs/model_b_v3_material_merged_label_vocabs.json` | Label vocab mapping for Model C — maps integer indices to attribute class names. |
+
+---
+
+### Training Notebooks
+
+| File | Description |
+|------|-------------|
+| `notebooks/data_exploration.ipynb` | EDA on the Myntra dataset — class distributions, image quality checks, label analysis. |
+| `notebooks/image_preprocessing.ipynb` | Tests rule-based region cropping and center-zoom preprocessing on sample images. |
+| `notebooks/classifier_training_baseline.ipynb` | Baseline ResNet-50 training run for Model A. |
+| `notebooks/baseline_improved.ipynb` | Improved Model A training with class-weighted loss and two-stage fine-tuning. |
+| `notebooks/model_eval_full_dataset.ipynb` | Final Model A evaluation on the full dataset — precision, recall, F1 per class. |
+| `notebooks/occasion_classifier_training.ipynb` | Model B v1 training with class-weighted CrossEntropyLoss. |
+| `notebooks/occasion_classifier_v2.ipynb` | Model B v2 training with data capping — final version used in production. |
+| `notebooks/occasion_distribution_analysis.ipynb` | Analysis of occasion label distribution across the Myntra dataset. |
+| `DeepFashion/attribute_modeling/model_b_v1/model_b_v1_training.ipynb` | Model C v1 training — multi-head ResNet-50 on DeepFashion attribute annotations. |
+| `DeepFashion/attribute_modeling/model_b_v1/model_b_v2_training.ipynb` | Model C v2/v3 training — simplified label sets, masked supervision, two-stage fine-tuning. |
+
+---
+
+### Datasets
+
+| File | Description |
+|------|-------------|
+| `data/combined_df.csv` | Merged Myntra dataset — 23,393 rows filtered to 5 subCategories. Contains image URLs and metadata. |
+| `data/balanced_df.csv` | Class-balanced subset of `combined_df` used for early training experiments. |
+| `data/images.csv` | Raw Myntra image CSV — maps image ID to hosted URL. |
+| `data/styles.csv` | Raw Myntra metadata CSV — articleType, baseColour, subCategory, usage per item. |
+| `DeepFashion/data/anno_fine_v2_common_items_material_merged.csv` | Cleaned DeepFashion annotation CSV used to train Model C — includes pattern, material, and sleeve labels. |
+
+---
+
+### Scripts
+
+| File | Description |
+|------|-------------|
+| `scripts/crop_clothing.py` | Center-zoom preprocessing utility. Crops 10% from each edge to lightly zoom in on the clothing item. Tested but not used in the final training pipeline. |
+| `scripts/download_balanced_images.py` | Downloads the balanced image subset from Myntra URLs to local disk. |
+| `DeepFashion/attribute_modeling/build_anno_fine_outfit_features.py` | Parses raw DeepFashion annotation `.txt` files and builds the merged training CSV for Model C. |
+
+---
+
+### Frontend
+
+| File | Description |
+|------|-------------|
+| `stylesync-vercel/public/index.html` | App entry point — loads all screen components and initializes the React app. |
+| `stylesync-vercel/public/api-client.js` | JavaScript shim bridging the static frontend to the Next.js API routes. |
+| `stylesync-vercel/public/screens-upload.jsx` | Upload screen — image capture, prediction display, and wardrobe save flow. |
+| `stylesync-vercel/public/screens-upload-wardrobe.jsx` | Wardrobe grid view — displays all saved items grouped by category. |
+| `stylesync-vercel/public/screens-outfits.jsx` | Outfit generation screen — occasion selector and scored outfit display. |
+| `stylesync-vercel/public/screens-remix.jsx` | Remix screen — pick a focus item, see three scored outfit suggestions built around it using inline compatibility scoring. |
+
+---
+
+### API Routes & Library
+
+| File | Description |
+|------|-------------|
+| `stylesync-vercel/lib/outfitEngine.ts` | Rule-based outfit scoring engine — filters by occasion, scores combinations, ranks and explains results. |
+| `stylesync-vercel/lib/hf-client.ts` | Connects to the HF Space via `@gradio/client` and coerces all model outputs into typed prediction objects. |
+| `stylesync-vercel/lib/kv-store.ts` | Vercel KV CRUD layer — read and write wardrobe items and saved outfits. |
+| `stylesync-vercel/lib/types.ts` | Shared TypeScript types — `WardrobeItem`, `Outfit`, `Category`, `Occasion`, and attribute label types. |
+| `stylesync-vercel/app/api/predict/route.ts` | POST endpoint — forwards uploaded image to HF Space and returns prediction JSON. |
+| `stylesync-vercel/app/api/wardrobe/route.ts` | GET / POST endpoint — loads and saves wardrobe items via Vercel KV. |
+| `stylesync-vercel/app/api/outfits/route.ts` | POST endpoint — loads wardrobe from KV, runs `generateOutfits()`, returns ranked outfit suggestions. |
 
 ## Limitations & Known Issues
 
 | Area | Limitation |
 |------|------------|
-| **Models B and C not yet live** | The deployed HF Space currently runs Model A (category) and color extraction only. Occasion and attribute predictions are pending integration into `app.py`. |
-| **Outerwear precision** | Model A precision for Outerwear is 0.542 — the model over-predicts Outerwear for ambiguous items (heavy jackets, cardigans) due to the small training set (279 images). |
-| **Material head is weak** | Model C's `material_family` head scores only 8 points above the majority-class baseline. It is intentionally down-weighted in the recommendation engine and should not be used as a strong signal. |
-| **Color misses white backgrounds** | The k-means color extractor masks near-white pixels, but may still pick up off-white or cream backgrounds as the dominant color on very light garments. |
-| **Outfit engine not yet deployed** | `RECOMMENDATION_LOGIC_V1.md` defines the full rule-based scoring system but it has not been implemented in code yet. Current outfit suggestions in the frontend are placeholder logic. |
-| **Model weights not in repo** | `.pt` files are excluded from version control due to size. The Gradio app will fail to start without them present. |
-| **No Dress or Shoes attribute predictions** | Model C only covers Tops, Bottomwear, and Outerwear. Shoes are handled through category, occasion, and color only. Dresses are out of scope for attribute prediction. |
-| **Session-level wardrobe only** | Wardrobe data is tied to Vercel KV session keys. There is no user authentication — all items in a session are shared by anyone with the same session identifier. |
-| **Recommendation engine not yet signal-complete** | The V1 engine cannot model silhouette, fit balance, item length, footwear attributes, season, or personal style preference. It is strongest on color harmony, occasion consistency, and basic pattern compatibility. |
+| **Outerwear precision** | Model A precision for Outerwear is 0.542 due to only 279 training samples. The model over-predicts Outerwear for ambiguous items like cardigans and heavy knits. |
+| **Material head reliability** | Model C `material_family` scores only 8 points above the majority baseline. Assigned the lowest weight (5%) in outfit scoring — treat material predictions as low-confidence. |
+| **Color on white backgrounds** | The k-means extractor masks near-white pixels but may still pick up off-white or cream backgrounds on light garments as the dominant color. |
+| **No user authentication** | Wardrobe is session-scoped with no login. Multiple users sharing a session share the same wardrobe. |
+| **HF Space cold start** | First prediction after the Space has been idle takes several seconds to load models into memory. |
+| **Model weights not in repo** | `.pt` files exceed GitHub's 100MB limit and are excluded. The Gradio app will fail to start without them. |
+| **Outfit engine cannot model silhouette or fit** | The V1 engine is strongest on color harmony, occasion consistency, and pattern compatibility. It cannot reason about item length, body proportion, or personal style preference. |
